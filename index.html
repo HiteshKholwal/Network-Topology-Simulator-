@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Network Topology Simulator</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+      background: #f5f6fa;
+      margin: 0;
+      padding: 0;
+    }
+    h2 {
+      margin-left: 24px;
+      margin-top: 24px;
+      font-size: 2rem;
+      color: #000000;
+      letter-spacing: 1px;
+    }
+    #controls {
+      margin: 24px 0 0 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    #controls button, #controls select {
+      padding: 7px 18px;
+      border-radius: 6px;
+      border: 1px solid #bfc8d4;
+      background: #fff;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s, box-shadow 0.2s;
+      box-shadow: 0 1px 2px rgba(34,42,54,0.04);
+    }
+    #controls button:hover, #controls select:hover {
+      background: #e3eafc;
+      box-shadow: 0 2px 8px rgba(34,42,54,0.08);
+    }
+    #controls button:active {
+      background: #d0d8ec;
+    }
+    #controls select {
+      min-width: 120px;
+    }
+    .canvas-container {
+      margin: 24px auto 0 auto;
+      background: #f6f8fb;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 24px;
+      max-width: 900px;
+      width: fit-content;
+      display: flex;
+      justify-content: center;
+    }
+    canvas {
+      border: none;
+      border-radius: 10px;
+      background: #f1f2f6;
+      box-shadow: 0 2px 12px rgba(34,42,54,0.10);
+      margin: 0;
+    }
+  </style>
+  
+  
+</head>
+<body>
+  <h2>Network Topology Simulator</h2>
+  <div id="controls">
+    <button onclick="addNode()">Add Node</button>
+    <button onclick="connectNodes()">Connect Nodes</button>
+    <button onclick="sendMessage()">Send Message</button>
+    <br><br>
+    <select id="layout">
+      <option value="star">Star</option>
+      <option value="ring">Ring</option>
+      <option value="mesh">Mesh</option>
+      <option value="bus">Bus</option>
+      <option value="tree">Tree</option>
+    </select>
+    <button onclick="generateTopology()">Generate Topology</button>
+  </div>
+
+  <div class="canvas-container">
+    <!-- The canvas will be inserted here by p5.js -->
+  </div>
+  
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+  <script>
+    let nodes = [];
+    let edges = [];
+    let selected = [];
+    let messagePath = [];
+    let dotProgress = 0;
+    let sending = false;
+    let canvasWidth = 800;
+    let canvasHeight = 500;
+    let selectedNode = null;
+    let draggingNode = null;
+
+    function setup() {
+  let cnv = createCanvas(canvasWidth, canvasHeight);
+  cnv.parent(document.querySelector('.canvas-container'));
+}
+
+
+    function draw() {
+      background(240);
+
+      // Draw edges
+      stroke(0);
+      strokeWeight(2);
+      edges.forEach(edge => {
+        let a = nodes[edge.from];
+        let b = nodes[edge.to];
+        line(a.x, a.y, b.x, b.y);
+      });
+
+      // Draw edge weights (offset from edge)
+      edges.forEach(edge => {
+        let a = nodes[edge.from];
+        let b = nodes[edge.to];
+        let midX = (a.x + b.x) / 2;
+        let midY = (a.y + b.y) / 2;
+        // Offset perpendicular to edge
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let len = Math.sqrt(dx*dx + dy*dy);
+        let offset = 18;
+        let perpX = -dy / len * offset;
+        let perpY = dx / len * offset;
+        fill(255);
+        noStroke();
+        rectMode(CENTER);
+        rect(midX + perpX, midY + perpY, 22, 18, 5);
+        fill(0);
+        textAlign(CENTER, CENTER);
+        text(edge.weight, midX + perpX, midY + perpY);
+      });
+
+      // Draw message dot
+      if (sending && messagePath.length > 1) {
+        let currentSegment = Math.floor(dotProgress);
+        if (currentSegment < messagePath.length - 1) {
+          let from = nodes[messagePath[currentSegment]];
+          let to = nodes[messagePath[currentSegment + 1]];
+          let t = dotProgress - currentSegment;
+          let x = lerp(from.x, to.x, t);
+          let y = lerp(from.y, to.y, t);
+          fill(0, 255, 0);
+          noStroke();
+          ellipse(x, y, 12);
+          dotProgress += 0.02;
+        } else {
+          sending = false;
+        }
+      }
+
+      // Draw nodes
+      nodes.forEach((node, index) => {
+        fill(200);
+        if (selected.includes(index)) stroke(0, 255, 0);
+        else stroke(0);
+        strokeWeight(2);
+        ellipse(node.x, node.y, 40);
+        fill(0);
+        noStroke();
+        textAlign(CENTER, CENTER);
+        text(node.label, node.x, node.y);
+      });
+    }
+
+    function mousePressed() {
+      selectedNode = null;
+      for (let i = 0; i < nodes.length; i++) {
+        let d = dist(mouseX, mouseY, nodes[i].x, nodes[i].y);
+        if (d < 20) {
+          selectedNode = i;
+          draggingNode = i;
+          if (selected.includes(i)) {
+            selected = selected.filter(idx => idx !== i);
+          } else {
+            if (selected.length < 2) selected.push(i);
+          }
+          break;
+        }
+      }
+    }
+
+    function mouseDragged() {
+      if (draggingNode !== null) {
+        nodes[draggingNode].x = mouseX;
+        nodes[draggingNode].y = mouseY;
+      }
+    }
+
+    function mouseReleased() {
+      draggingNode = null;
+    }
+
+    function keyPressed() {
+      if (keyCode === DELETE || keyCode === BACKSPACE) {
+        deleteSelectedNode();
+      }
+    }
+
+    function deleteSelectedNode() {
+      if (selectedNode !== null && selectedNode >= 0 && selectedNode < nodes.length) {
+        nodes.splice(selectedNode, 1);
+        edges = edges
+          .filter(edge => edge.from !== selectedNode && edge.to !== selectedNode)
+          .map(edge => ({
+            from: edge.from > selectedNode ? edge.from - 1 : edge.from,
+            to: edge.to > selectedNode ? edge.to - 1 : edge.to,
+            weight: edge.weight
+          }));
+        selected = selected
+          .filter(i => i !== selectedNode)
+          .map(i => i > selectedNode ? i - 1 : i);
+        selectedNode = null;
+        nodes.forEach((node, i) => node.label = String.fromCharCode(65 + i));
+      } else {
+        alert("Click a node before deleting.");
+      }
+    }
+
+    function addNode() {
+      let label = String.fromCharCode(65 + nodes.length);
+      let x = Math.floor(Math.random() * (canvasWidth - 100)) + 50;
+      let y = Math.floor(Math.random() * (canvasHeight - 100)) + 50;
+      nodes.push({ label: label, x: x, y: y });
+    }
+
+    function connectNodes() {
+      if (selected.length === 2) {
+        let weight = prompt("Enter weight for this connection:");
+        if (weight !== null && !isNaN(weight)) {
+          edges.push({ from: selected[0], to: selected[1], weight: parseFloat(weight) });
+        }
+        selected = [];
+      } else {
+        alert("Select two nodes to connect.");
+      }
+    }
+
+    function sendMessage() {
+      if (selected.length === 2) {
+        let path = dijkstra(selected[0], selected[1]);
+        if (path) {
+          messagePath = path;
+          dotProgress = 0;
+          sending = true;
+        } else {
+          alert("No path found.");
+        }
+        selected = [];
+      } else {
+        alert("Select source and destination nodes.");
+      }
+    }
+
+    function doubleClicked() {
+      for (let i = 0; i < nodes.length; i++) {
+        let d = dist(mouseX, mouseY, nodes[i].x, nodes[i].y);
+        if (d < 20) {
+          let newLabel = prompt("Enter new label for node " + nodes[i].label + ":");
+          if (newLabel !== null && newLabel.trim() !== "") {
+            nodes[i].label = newLabel.trim();
+          }
+          break;
+        }
+      }
+    }
+
+    function dijkstra(start, goal) {
+  const n = nodes.length;
+  const dist = Array(n).fill(Infinity);
+  const prev = Array(n).fill(null);
+  const visited = Array(n).fill(false);
+
+  dist[start] = 0;
+
+  for (let i = 0; i < n; i++) {
+    // Find the unvisited node with the smallest distance
+    let u = -1;
+    for (let j = 0; j < n; j++) {
+      if (!visited[j] && (u === -1 || dist[j] < dist[u])) {
+        u = j;
+      }
+    }
+    if (dist[u] === Infinity) break; // Unreachable nodes
+
+    visited[u] = true;
+
+    // For each neighbor of u
+    edges.forEach(edge => {
+      let v = null, weight = edge.weight;
+      if (edge.from === u) v = edge.to;
+      else if (edge.to === u) v = edge.from;
+      if (v !== null && !visited[v]) {
+        if (dist[u] + weight < dist[v]) {
+          dist[v] = dist[u] + weight;
+          prev[v] = u;
+        }
+      }
+    });
+  }
+
+  // Reconstruct path
+  let path = [];
+  let curr = goal;
+  while (curr !== null) {
+    path.push(curr);
+    curr = prev[curr];
+  }
+  path.reverse();
+  if (path[0] === start) return path;
+  return null;
+}
+
+
+    function generateTopology() {
+      let layout = document.getElementById("layout").value;
+      nodes = [];
+      edges = [];
+      selected = [];
+      let numNodes = 6;
+      for (let i = 0; i < numNodes; i++) {
+        let label = String.fromCharCode(65 + i);
+        nodes.push({ label: label, x: 0, y: 0 });
+      }
+      if (layout === "star") generateStarLayout(numNodes);
+      else if (layout === "ring") generateRingLayout(numNodes);
+      else if (layout === "mesh") generateMeshLayout(numNodes);
+      else if (layout === "bus") generateBusLayout(numNodes);
+      else if (layout === "tree") generateTreeLayout(numNodes);
+    }
+
+    function generateStarLayout(n) {
+      let cx = canvasWidth / 2;
+      let cy = canvasHeight / 2;
+      let r = 150;
+      // Place center node (index 0)
+      nodes[0].x = cx;
+      nodes[0].y = cy;
+      // Place rest of the nodes around a circle and connect to center
+      for (let i = 1; i < n; i++) {
+        let angle = map(i - 1, 0, n - 2, 0, TWO_PI); // n-2 because we skip center
+        nodes[i].x = cx + r * Math.cos(angle);
+        nodes[i].y = cy + r * Math.sin(angle);
+        edges.push({ from: 0, to: i, weight: getRandomWeight() });
+      }
+    }
+
+    function generateRingLayout(n) {
+      let cx = canvasWidth / 2, cy = canvasHeight / 2, r = 150;
+      for (let i = 0; i < n; i++) {
+        let angle = map(i, 0, n, 0, TWO_PI);
+        nodes[i].x = cx + r * cos(angle);
+        nodes[i].y = cy + r * sin(angle);
+        edges.push({ from: i, to: (i + 1) % n, weight: getRandomWeight() });
+      }
+    }
+
+    function generateMeshLayout(n) {
+      let cx = canvasWidth / 2, cy = canvasHeight / 2, r = 200;
+      for (let i = 0; i < n; i++) {
+        let angle = TWO_PI * i / n;
+        nodes[i].x = cx + r * cos(angle);
+        nodes[i].y = cy + r * sin(angle);
+      }
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          edges.push({ from: i, to: j, weight: getRandomWeight() });
+        }
+      }
+    }
+
+    function generateBusLayout(n) {
+      let y = canvasHeight / 2;
+      let spacing = canvasWidth / (n + 1);
+      for (let i = 0; i < n; i++) {
+        nodes[i].x = spacing * (i + 1);
+        nodes[i].y = y;
+        if (i > 0) edges.push({ from: i - 1, to: i, weight: getRandomWeight() });
+      }
+    }
+
+    function generateTreeLayout(n) {
+      let levels = Math.ceil(Math.log2(n + 1));
+      let gapY = canvasHeight / (levels + 1);
+      let index = 0;
+      for (let level = 0; level < levels; level++) {
+        let count = Math.pow(2, level);
+        let gapX = canvasWidth / (count + 1);
+        for (let i = 0; i < count && index < n; i++) {
+          nodes[index].x = gapX * (i + 1);
+          nodes[index].y = gapY * (level + 1);
+          if (index > 0) {
+            let parent = Math.floor((index - 1) / 2);
+            edges.push({ from: parent, to: index, weight: getRandomWeight() });
+          }
+          index++;
+        }
+      }
+    }
+
+    function getRandomWeight() {
+      return Math.floor(Math.random() * 9) + 1; // Weight between 1 and 9
+    }
+  </script>
+</body>
+</html>
